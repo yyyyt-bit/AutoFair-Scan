@@ -86,7 +86,12 @@ class CameraViewModel(appContainer: AppContainer): ViewModel() {
     fun setAutoCaptureEnabled(enabled: Boolean) {
         _autoCaptureEnabled.value = enabled
         autoCaptureController.reset()
+        _autoProgress.value = 0f
     }
+
+    // Progresso da contagem (0..1) para o anel na tela da câmera.
+    private val _autoProgress = MutableStateFlow(0f)
+    val autoProgress: StateFlow<Float> = _autoProgress.asStateFlow()
 
     // Ajustes vindos das Configurações (SharedPreferences).
     private val _autoConfig = MutableStateFlow(AutoCaptureConfig())
@@ -116,6 +121,7 @@ class CameraViewModel(appContainer: AppContainer): ViewModel() {
     }
 
     fun onCapturePressed(frozenImage: Bitmap) {
+        _autoProgress.value = 0f
         _captureState.value = CaptureState.Capturing(frozenImage)
         resetLiveAnalysis()
     }
@@ -175,6 +181,7 @@ class CameraViewModel(appContainer: AppContainer): ViewModel() {
                         java.util.Locale.US, "mov %.3f | troca %.3f",
                         autoCaptureController.lastMotion, autoCaptureController.lastChange
                     )
+                    _autoProgress.value = autoCaptureController.progress
                     if (shouldCapture) {
                         // Mesmo caminho da tecla de volume, que já chama o onCapture da tela.
                         onVolumeKeyPressed()
@@ -235,6 +242,7 @@ class CameraViewModel(appContainer: AppContainer): ViewModel() {
     fun afterCaptureError() {
         // Falhou: volta a contar para tentar de novo com a página parada.
         autoCaptureController.onCaptureFailed()
+        _autoProgress.value = 0f
         _captureState.value = CaptureState.Idle
     }
 

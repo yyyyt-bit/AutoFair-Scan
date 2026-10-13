@@ -145,6 +145,7 @@ fun CameraScreen(
     val isAutoCapture by cameraViewModel.autoCaptureEnabled.collectAsStateWithLifecycle()
     val autoConfig by cameraViewModel.autoConfig.collectAsStateWithLifecycle()
     val autoDebug by cameraViewModel.autoDebug.collectAsStateWithLifecycle()
+    val autoProgress by cameraViewModel.autoProgress.collectAsStateWithLifecycle()
     val appContext = LocalContext.current
     LaunchedEffect(Unit) { cameraViewModel.loadAutoConfig(appContext) }
 
@@ -277,6 +278,7 @@ fun CameraScreen(
             cameraViewModel.setAutoCaptureEnabled(!isAutoCapture)
         },
         autoDebugText = autoDebug,
+        autoProgress = autoProgress,
     )
 }
 
@@ -298,6 +300,7 @@ private fun CameraScreenScaffold(
     isAutoCapture: Boolean = false,
     onAutoCaptureSwitched: () -> Unit = {},
     autoDebugText: String = "",
+    autoProgress: Float = 0f,
 ) {
     var focusPoint by remember { mutableStateOf<Offset?>(null) }
     LaunchedEffect(focusPoint) {
@@ -346,6 +349,7 @@ private fun CameraScreenScaffold(
                     isAutoCapture,
                     onAutoCaptureSwitched,
                     autoDebugText,
+                    autoProgress,
                     modifier.pointerInput(Unit) {
                         detectTapGestures { offset ->
                             focusPoint = offset
@@ -410,6 +414,7 @@ private fun CameraPreviewBox(
     isAutoCapture: Boolean,
     onAutoCaptureSwitched: () -> Unit,
     autoDebugText: String,
+    autoProgress: Float,
     modifier: Modifier,
 ) {
     Box(
@@ -435,6 +440,15 @@ private fun CameraPreviewBox(
             )
         }
         FocusOverlay(focusPoint)
+        // AutoFair-Scan: anel de progresso em volta do botão de captura
+        if (isAutoCapture && autoProgress > 0f) {
+            AutoCaptureRing(
+                progress = autoProgress,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp)
+            )
+        }
         CaptureButton(
             onClick = onCapture,
             modifier = Modifier
@@ -515,6 +529,35 @@ private fun CapturedImage(image: ImageBitmap, thumbnailCoords: MutableState<Offs
                     scaleX = scale
                     scaleY = scale
                 }
+        )
+    }
+}
+
+// AutoFair-Scan: anel que enche enquanto a página está parada, antes da captura automática.
+@Composable
+private fun AutoCaptureRing(progress: Float, modifier: Modifier) {
+    Canvas(modifier = modifier.size(80.dp)) {
+        val stroke = 5.dp.toPx()
+        val outset = 7.dp.toPx()
+        val topLeft = Offset(-outset, -outset)
+        val ringSize = Size(size.width + 2 * outset, size.height + 2 * outset)
+        drawArc(
+            color = Color.White.copy(alpha = 0.3f),
+            startAngle = 0f,
+            sweepAngle = 360f,
+            useCenter = false,
+            topLeft = topLeft,
+            size = ringSize,
+            style = Stroke(width = stroke)
+        )
+        drawArc(
+            color = Color.White,
+            startAngle = -90f,
+            sweepAngle = 360f * progress.coerceIn(0f, 1f),
+            useCenter = false,
+            topLeft = topLeft,
+            size = ringSize,
+            style = Stroke(width = stroke)
         )
     }
 }

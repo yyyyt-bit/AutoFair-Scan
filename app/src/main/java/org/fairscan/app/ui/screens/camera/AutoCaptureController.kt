@@ -52,6 +52,10 @@ class AutoCaptureController(
     var lastChange = 0f
         private set
 
+    /** Progresso da contagem, de 0 a 1 (0 = parado ou sem contagem). Alimenta o anel. */
+    var progress = 0f
+        private set
+
     /**
      * @param now relógio monotônico em ms
      * @param stableQuad quad já estabilizado pelo QuadStabilizer (null se instável)
@@ -64,6 +68,7 @@ class AutoCaptureController(
         prevThumb = thumb
         val frameDiff = if (prev == null) 0f else meanDiff(thumb, prev)
         lastMotion = frameDiff
+        progress = 0f
 
         when (state) {
             State.COUNTING -> {
@@ -72,7 +77,9 @@ class AutoCaptureController(
                     return false
                 }
                 if (quietSince == 0L) quietSince = now
+                progress = ((now - quietSince).toFloat() / quietMs.coerceAtLeast(1L)).coerceIn(0f, 1f)
                 if (now - quietSince >= quietMs) {
+                    progress = 0f
                     state = State.WAIT_MOTION
                     lockedThumb = thumb
                     quietSince = 0L
@@ -107,6 +114,7 @@ class AutoCaptureController(
     }
 
     private fun startCounting() {
+        progress = 0f
         state = State.COUNTING
         quietSince = 0L
         lostSince = 0L
