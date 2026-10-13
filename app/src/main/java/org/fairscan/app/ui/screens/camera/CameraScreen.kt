@@ -15,6 +15,8 @@
 package org.fairscan.app.ui.screens.camera
 
 import android.content.res.Configuration
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.util.Log
 import androidx.camera.core.ImageProxy
 import androidx.camera.view.PreviewView
@@ -141,6 +143,10 @@ fun CameraScreen(
     val isTorchEnabled by cameraViewModel.isTorchEnabled.collectAsStateWithLifecycle()
     var torchReapplied by remember { mutableStateOf(false) }
     val isAutoCapture by cameraViewModel.autoCaptureEnabled.collectAsStateWithLifecycle()
+    val autoConfig by cameraViewModel.autoConfig.collectAsStateWithLifecycle()
+    val autoDebug by cameraViewModel.autoDebug.collectAsStateWithLifecycle()
+    val appContext = LocalContext.current
+    LaunchedEffect(Unit) { cameraViewModel.loadAutoConfig(appContext) }
 
     val captureController = remember { CameraCaptureController() }
     DisposableEffect(Unit) {
@@ -154,8 +160,18 @@ fun CameraScreen(
     }
 
     val captureState by cameraViewModel.captureState.collectAsStateWithLifecycle()
+    // Bipe a cada captura concluída
+    val toneGenerator = remember {
+        runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100) }.getOrNull()
+    }
+    DisposableEffect(Unit) {
+        onDispose { toneGenerator?.release() }
+    }
     if (captureState is CaptureState.CapturePreview) {
         LaunchedEffect(captureState) {
+            if (autoConfig.beepEnabled) {
+                runCatching { toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 200) }
+            }
             delay(CAPTURED_IMAGE_DISPLAY_DURATION)
             cameraViewModel.addProcessedImage()
         }
@@ -260,6 +276,7 @@ fun CameraScreen(
         onAutoCaptureSwitched = {
             cameraViewModel.setAutoCaptureEnabled(!isAutoCapture)
         },
+        autoDebugText = autoDebug,
     )
 }
 
@@ -280,6 +297,7 @@ private fun CameraScreenScaffold(
     onImportClicked: () -> Unit,
     isAutoCapture: Boolean = false,
     onAutoCaptureSwitched: () -> Unit = {},
+    autoDebugText: String = "",
 ) {
     var focusPoint by remember { mutableStateOf<Offset?>(null) }
     LaunchedEffect(focusPoint) {
@@ -327,6 +345,7 @@ private fun CameraScreenScaffold(
                     onTorchSwitched,
                     isAutoCapture,
                     onAutoCaptureSwitched,
+                    autoDebugText,
                     modifier.pointerInput(Unit) {
                         detectTapGestures { offset ->
                             focusPoint = offset
@@ -390,6 +409,7 @@ private fun CameraPreviewBox(
     onTorchSwitched: () -> Unit,
     isAutoCapture: Boolean,
     onAutoCaptureSwitched: () -> Unit,
+    autoDebugText: String,
     modifier: Modifier,
 ) {
     Box(
@@ -402,6 +422,17 @@ private fun CameraPreviewBox(
         )
         if (cameraUiState.isDebugMode) {
             MessageBox(cameraUiState.liveAnalysisState.inferenceTime)
+        }
+        if (cameraUiState.isDebugMode && isAutoCapture) {
+            Text(
+                text = autoDebugText,
+                color = Color.White,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .padding(4.dp)
+            )
         }
         FocusOverlay(focusPoint)
         CaptureButton(

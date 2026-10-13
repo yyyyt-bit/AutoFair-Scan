@@ -11,32 +11,45 @@
  * more details.
  * You should have received a copy of the GNU General Public License along with
  * this program. If not, see <https://www.gnu.org/licenses/>.
- */
 package org.fairscan.app.ui.screens.camera
 
 import org.fairscan.imageprocessing.Quad
 import kotlin.math.abs
 
 /**
- * Decide quando disparar a captura automática.
+ * Decide quando disparar a captura automática, pelo ciclo:
  *
- * SEARCHING: espera o documento ficar estável por [stableMs] e dispara uma vez.
- * LOCKED: não dispara mais nada até detectar que a página mudou, ou seja,
- *   o documento sumiu por [lostMs] ou a imagem mudou mais que [changeTol].
+ * COUNTING: o documento (contorno) precisa estar presente e sem movimento.
+ *   Qualquer movimento zera o contador. Quando ele completa [quietMs] sem
+ *   movimento, dispara a captura e passa para WAIT_MOTION.
+ * WAIT_MOTION: depois da captura não faz nada até haver movimento (contorno
+ *   ausente por [lostMs] ou imagem diferente da capturada em mais que
+ *   [changeTol]). Aí volta para COUNTING.
  *
- * Lógica pura (sem Android), chamada uma vez por frame analisado.
+ * Movimento = contorno instável/ausente, ou diferença média entre este frame
+ * e o anterior maior que [motionTol]. Lógica pura, chamada por frame analisado.
  */
 class AutoCaptureController(
-    private val stableMs: Long = 800,
+    var quietMs: Long = 1500,
+    var motionTol: Float = 0.015f,
+    var changeTol: Float = 0.04f,
     private val lostMs: Long = 400,
-    private val changeTol: Float = 0.04f,
 ) {
-    private enum class State { SEARCHING, LOCKED }
+    private enum class State { COUNTING, WAIT_MOTION }
 
-    private var state = State.SEARCHING
-    private var stableSince = 0L
+    private var state = State.COUNTING
+    private var quietSince = 0L
     private var lostSince = 0L
     private var lockedThumb: FloatArray? = null
+    private var prevThumb: FloatArray? = null
+
+    /** Diferença do último frame para o anterior (para exibir no modo debug). */
+    var lastMotion = 0f
+        private set
+
+    /** Diferença do último frame para a imagem capturada (modo debug). */
+    var lastChange = 0f
+        private set
 
     /**
      * @param now relógio monotônico em ms
@@ -46,47 +59,70 @@ class AutoCaptureController(
      * @return true se a captura deve ser disparada agora
      */
     fun onFrame(now: Long, stableQuad: Quad?, rawQuad: Quad?, thumb: FloatArray): Boolean {
+        val prev = prevThumb
+        prevThumb = thumb
+        val frameDiff = if (prev == null) 0f else meanDiff(thumb, prev)
+        lastMotion = frameDiff
+
         when (state) {
-            State.SEARCHING -> {
-                if (stableQuad == null) {
-                    stableSince = 0L
+            State.COUNTING -> {
+                if (stableQuad == null || frameDiff > motionTol) {
+                    quietSince = 0L
                     return false
                 }
-                if (stableSince == 0L) stableSince = now
-                if (now - stableSince >= stableMs) {
-                    state = State.LOCKED
+                if (quietSince == 0L) quietSince = now
+                if (now - quietSince >= quietMs) {
+                    state = State.WAIT_MOTION
                     lockedThumb = thumb
-                    stableSince = 0L
+                    quietSince = 0L
                     lostSince = 0L
                     return true
                 }
             }
-            State.LOCKED -> {
+            State.WAIT_MOTION -> {
                 if (rawQuad == null) {
+                    lastChange = 0f
                     if (lostSince == 0L) lostSince = now
-                    if (now - lostSince >= lostMs) reset()
+                    if (now - lostSince >= lostMs) startCounting()
                 } else {
                     lostSince = 0L
                     val locked = lockedThumb
-                    if (locked == null || meanDiff(thumb, locked) > changeTol) reset()
+                    lastChange = if (locked == null) Float.MAX_VALUE else meanDiff(thumb, locked)
+                    if (lastChange > changeTol) startCounting()
                 }
             }
         }
         return false
     }
 
-    /** Volta para SEARCHING (ao ligar/desligar o modo, por exemplo). */
-    fun reset() {
-        state = State.SEARCHING
-        stableSince = 0L
-        lostSince = 0L
-        lockedThumb = null
+    /** A captura falhou: volta a contar para tentar de novo com a página parada. */
+    fun onCaptureFailed() {
+        startCounting()
     }
 
+    /** Volta ao início do ciclo (ao ligar/desligar o modo). */
+    fun reset() {
+        startCounting()
+    }
+
+    private fun startCounting() {
+        state = State.COUNTING
+        quietSince = 0L
+        lostSince = 0L
+        lockedThumb = null
+        prevThumb = null
+    }
+
+    /** Diferença média ignorando mudança geral de brilho (exposição automática). */
     private fun meanDiff(a: FloatArray, b: FloatArray): Float {
-        if (a.size != b.size) return Float.MAX_VALUE
+        if (a.size != b.size || a.isEmpty()) return Float.MAX_VALUE
+        var ma = 0f
+        var mb = 0f
+        for (i in a.indices) { ma += a[i]; mb += b[i] }
+        ma /= a.size
+        mb /= b.size
         var sum = 0f
-        for (i in a.indices) sum += abs(a[i] - b[i])
+        for (i in a.indices) sum += abs((a[i] - ma) - (b[i] - mb))
         return sum / a.size
     }
 }

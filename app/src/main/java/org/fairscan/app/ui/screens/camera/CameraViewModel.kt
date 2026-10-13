@@ -14,6 +14,7 @@
  */
 package org.fairscan.app.ui.screens.camera
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
@@ -86,6 +87,23 @@ class CameraViewModel(appContainer: AppContainer): ViewModel() {
         _autoCaptureEnabled.value = enabled
         autoCaptureController.reset()
     }
+
+    // Ajustes vindos das Configurações (SharedPreferences).
+    private val _autoConfig = MutableStateFlow(AutoCaptureConfig())
+    val autoConfig: StateFlow<AutoCaptureConfig> = _autoConfig.asStateFlow()
+
+    // Valores de movimento para o modo debug.
+    private val _autoDebug = MutableStateFlow("")
+    val autoDebug: StateFlow<String> = _autoDebug.asStateFlow()
+
+    /** Lê os ajustes salvos. Chamado sempre que a tela da câmera abre. */
+    fun loadAutoConfig(context: Context) {
+        val config = AutoCaptureSettings(context).load()
+        _autoConfig.value = config
+        autoCaptureController.quietMs = config.quietMs
+        autoCaptureController.motionTol = config.motionTol
+        autoCaptureController.changeTol = config.changeTol
+    }
     // ------------------------------------------
 
     fun onVolumeKeyPressed() {
@@ -153,6 +171,10 @@ class CameraViewModel(appContainer: AppContainer): ViewModel() {
                     val shouldCapture = autoCaptureController.onFrame(
                         SystemClock.elapsedRealtime(), stableQuad, rawQuad, thumb
                     )
+                    _autoDebug.value = String.format(
+                        java.util.Locale.US, "mov %.3f | troca %.3f",
+                        autoCaptureController.lastMotion, autoCaptureController.lastChange
+                    )
                     if (shouldCapture) {
                         // Mesmo caminho da tecla de volume, que já chama o onCapture da tela.
                         onVolumeKeyPressed()
@@ -211,6 +233,8 @@ class CameraViewModel(appContainer: AppContainer): ViewModel() {
     }
 
     fun afterCaptureError() {
+        // Falhou: volta a contar para tentar de novo com a página parada.
+        autoCaptureController.onCaptureFailed()
         _captureState.value = CaptureState.Idle
     }
 
@@ -284,8 +308,8 @@ fun rotateBitmap(source: Bitmap, angle: Float): Bitmap {
     return Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(), matrix, true)
 }
 
-/** Miniatura 16x16 em tons de cinza (0..1), usada para detectar troca de página. */
-private fun Bitmap.toThumbnail(size: Int = 16): FloatArray {
+/** Miniatura 32x32 em tons de cinza (0..1), usada para detectar movimento e troca de página. */
+private fun Bitmap.toThumbnail(size: Int = 32): FloatArray {
     val small = Bitmap.createScaledBitmap(this, size, size, true)
     val pixels = IntArray(size * size)
     small.getPixels(pixels, 0, size, 0, 0, size, size)
