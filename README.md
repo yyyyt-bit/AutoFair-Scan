@@ -2,7 +2,7 @@
   <img src="metadata/en-US/images/icon.png" alt="FairScan icon" width="120" />
 </p>
 
-<h1 align="center">FairScan</h1>
+<h1 align="center">AutoFair Scan</h1>
 
 <p align="center">
   An Android app to scan your documents —
