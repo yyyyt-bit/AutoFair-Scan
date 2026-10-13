@@ -62,6 +62,7 @@ import org.fairscan.app.domain.ExportQuality
 import org.fairscan.app.ui.Navigation
 import org.fairscan.app.ui.components.BackButton
 import org.fairscan.app.ui.dummyNavigation
+import org.fairscan.app.ui.screens.camera.AutoCaptureSettingsSection
 import org.fairscan.app.ui.theme.FairScanTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -220,6 +221,11 @@ private fun SettingsContent(
             },
             modifier = Modifier.clickable { navigation.toOcrLanguagesScreen() }
         )
+
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(16.dp))
+        AutoCaptureSettingsSection()
     }
 }
 
