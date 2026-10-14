@@ -221,6 +221,26 @@ fun CameraScreen(
             onCapture()
         }
     }
+    // AutoFair-Scan: na captura automática, foca (conforme a opção das Configurações)
+    // antes de tirar a foto.
+    LaunchedEffect(Unit) {
+        cameraViewModel.autoCaptureEvent.collect {
+            val mode = autoConfig.focusMode
+            if (mode != AutoFocusMode.OFF) {
+                val target: Offset? = when (mode) {
+                    AutoFocusMode.PAGE_CENTER ->
+                        captureController.pageCenterOnPreview(cameraViewModel.liveAnalysisState.value)
+                    AutoFocusMode.LAST_TAP -> captureController.lastTapOffset
+                    else -> null
+                }
+                // target nulo = centro da tela (também é o recurso se não houver contorno ou toque)
+                captureController.focusAndWait(target)
+            }
+            if (cameraViewModel.captureState.value is CaptureState.Idle) {
+                onCapture()
+            }
+        }
+    }
 
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     CameraScreenScaffold(

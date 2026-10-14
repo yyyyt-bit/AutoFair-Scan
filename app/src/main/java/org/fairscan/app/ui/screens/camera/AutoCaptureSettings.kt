@@ -16,6 +16,10 @@ package org.fairscan.app.ui.screens.camera
 
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,12 +42,21 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
+/** Onde focar antes de a captura automática tirar a foto. */
+enum class AutoFocusMode(val label: String) {
+    PAGE_CENTER("Centro da página detectada"),
+    SCREEN_CENTER("Centro da tela"),
+    LAST_TAP("Último ponto tocado"),
+    OFF("Desligado (só o foco automático)"),
+}
+
 /** Valores ajustáveis da captura automática. */
 data class AutoCaptureConfig(
     val quietMs: Long = 1500,
     val motionTol: Float = 0.015f,
     val changeTol: Float = 0.04f,
     val beepEnabled: Boolean = true,
+    val focusMode: AutoFocusMode = AutoFocusMode.PAGE_CENTER,
 )
 
 private const val QUIET_MIN = 0.3
@@ -66,6 +79,9 @@ class AutoCaptureSettings(context: Context) {
         changeTol = prefs.getFloat("changeTol", 0.04f)
             .coerceIn(CHANGE_MIN.toFloat(), CHANGE_MAX.toFloat()),
         beepEnabled = prefs.getBoolean("beepEnabled", true),
+        focusMode = runCatching {
+            AutoFocusMode.valueOf(prefs.getString("focusMode", null) ?: AutoFocusMode.PAGE_CENTER.name)
+        }.getOrDefault(AutoFocusMode.PAGE_CENTER),
     )
 
     fun save(config: AutoCaptureConfig) {
@@ -74,6 +90,7 @@ class AutoCaptureSettings(context: Context) {
             .putFloat("motionTol", config.motionTol)
             .putFloat("changeTol", config.changeTol)
             .putBoolean("beepEnabled", config.beepEnabled)
+            .putString("focusMode", config.focusMode.name)
             .apply()
     }
 }
@@ -124,6 +141,30 @@ fun AutoCaptureSettingsSection() {
                 checked = cfg.beepEnabled,
                 onCheckedChange = { update(cfg.copy(beepEnabled = it)) },
             )
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Text("Foco antes de capturar", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Pede foco antes da foto, para evitar fotos borradas. Desligado: a foto é tirada na hora.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(4.dp))
+        AutoFocusMode.values().forEach { mode ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = cfg.focusMode == mode,
+                        onClick = { update(cfg.copy(focusMode = mode)) },
+                        role = Role.RadioButton,
+                    )
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = cfg.focusMode == mode, onClick = null)
+                Text(mode.label, modifier = Modifier.padding(start = 12.dp))
+            }
         }
     }
 }

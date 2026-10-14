@@ -82,7 +82,11 @@ import org.fairscan.imageprocessing.cameraIntrinsics
 import org.fairscan.imageprocessing.scaledTo
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.max
 
 @Composable
@@ -350,7 +354,68 @@ class CameraCaptureController {
         )
     }
 
+    // AutoFair-Scan: último ponto tocado na tela (para a opção "Último ponto tocado").
+    @Volatile
+    var lastTapOffset: Offset? = null
+
+    // AutoFair-Scan: centro do contorno detectado, em coordenadas da prévia (null se não há contorno).
+    fun pageCenterOnPreview(state: LiveAnalysisState): Offset? {
+        val view = previewView ?: return null
+        if (view.width == 0 || view.height == 0) return null
+        val maskSize = state.maskSize ?: return null
+        val quad = state.stableQuad ?: return null
+        val scaled = quad.scaledTo(
+            fromWidth = maskSize.width,
+            fromHeight = maskSize.height,
+            toWidth = view.width.toDouble(),
+            toHeight = view.height.toDouble()
+        )
+        var sx = 0f
+        var sy = 0f
+        var n = 0
+        for (edge in scaled.edges()) {
+            val o = edge.from.toOffset()
+            sx += o.x
+            sy += o.y
+            n++
+        }
+        if (n == 0) return null
+        return Offset(
+            (sx / n).coerceIn(0f, view.width.toFloat()),
+            (sy / n).coerceIn(0f, view.height.toFloat())
+        )
+    }
+
+    // AutoFair-Scan: foca no ponto indicado (ou no centro da prévia, se null) e espera o
+    // resultado, no máximo timeoutMs. Usado só pela captura automática, antes da foto.
+    suspend fun focusAndWait(target: Offset?, timeoutMs: Long = 1500): Boolean {
+        val view = previewView ?: return false
+        val control = cameraControl ?: return false
+        if (view.width == 0 || view.height == 0) return false
+
+        val x = target?.x ?: (view.width / 2f)
+        val y = target?.y ?: (view.height / 2f)
+        val point = view.meteringPointFactory.createPoint(x, y)
+        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF)
+            .setAutoCancelDuration(3, TimeUnit.SECONDS)
+            .build()
+        val future = try {
+            control.startFocusAndMetering(action)
+        } catch (e: Exception) {
+            return false
+        }
+        return withTimeoutOrNull(timeoutMs) {
+            suspendCancellableCoroutine<Boolean> { cont ->
+                future.addListener({
+                    val ok = try { future.get().isFocusSuccessful } catch (e: Exception) { false }
+                    if (cont.isActive) cont.resume(ok)
+                }, Executor { it.run() })
+            }
+        } ?: false
+    }
+
     fun tapToFocus(tapOffset: Offset) {
+        lastTapOffset = tapOffset
         val view = previewView ?: return
         val control = cameraControl ?: return
 
