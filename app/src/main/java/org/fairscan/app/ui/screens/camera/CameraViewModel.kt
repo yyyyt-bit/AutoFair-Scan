@@ -89,6 +89,10 @@ class CameraViewModel(appContainer: AppContainer): ViewModel() {
         _autoProgress.value = 0f
     }
 
+    // Evento da captura automática: a tela foca e só depois captura.
+    private val _autoCaptureEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val autoCaptureEvent = _autoCaptureEvent.asSharedFlow()
+
     // Progresso da contagem (0..1) para o anel na tela da câmera.
     private val _autoProgress = MutableStateFlow(0f)
     val autoProgress: StateFlow<Float> = _autoProgress.asStateFlow()
@@ -183,8 +187,8 @@ class CameraViewModel(appContainer: AppContainer): ViewModel() {
                     )
                     _autoProgress.value = autoCaptureController.progress
                     if (shouldCapture) {
-                        // Mesmo caminho da tecla de volume, que já chama o onCapture da tela.
-                        onVolumeKeyPressed()
+                        // A tela foca no centro e então chama o mesmo onCapture do botão.
+                        _autoCaptureEvent.tryEmit(Unit)
                     }
                 }
                 // ------------------------------------------
